@@ -84,7 +84,7 @@ class LanguageHrefGenerator extends WireData implements Module {
 				if($currentPage->viewable($lang)) {
 					$localUrl = $currentPage->localHttpUrl($lang);
 					$languageCode = strtolower($lang->get(self::languageCodeFieldname));
-					$countryCode = ($lang->get(self::countryCodeFieldname)) ? strtoupper($lang->get(self::languageCodeFieldname)) : "";
+					$countryCode = ($lang->get(self::countryCodeFieldname)) ? strtoupper($lang->get(self::countryCodeFieldname)) : "";
 					
 					$hreflang = (!empty($countryCode)) ? $languageCode."-".$countryCode : $languageCode;
 					
