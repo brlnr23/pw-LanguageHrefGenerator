@@ -1,0 +1,207 @@
+<?php namespace ProcessWire;
+
+/**
+ * LanguageHrefGenerator module
+ *
+ * Generates automatically hreflang link markup for available languages
+ * 
+ * See README file for usage and further information
+ * 
+ * @copyright 2018 Christian Lange
+ * @license https://processwire.com/about/license/mit/
+ */
+
+class LanguageHrefGenerator extends WireData implements Module {
+
+	/**
+	 * getModuleInfo is a module required by all modules to tell ProcessWire about them
+	 *
+	 * @return array
+	 *
+	 */
+	public static function getModuleInfo() {
+
+		return array(
+			'title' => 'LanguageHrefGenerator', 
+			'version' => 2, 
+			'summary' => 'Generates automatically hreflang link markup for available languages',
+			'href' => 'http://processwire.com',
+			'singular' => false, 
+			'autoload' => true, 
+			'icon' => 'globe', 
+			'requires' => 'LanguageSupport'
+		);
+	}
+
+	
+	/**
+	 * Name of the language code field
+	 */
+	const languageCodeFieldname = 'hreflangLanguageCode';
+	
+	/**
+	 * Name of the country code field
+	 */
+	const countryCodeFieldname = 'hreflangCountryCode';
+	
+		
+	
+	public function ready() {
+		if($this->wire('page')->template == 'admin') { 
+			$this->isSetupCompleteCheck();
+		}
+	}
+	
+	
+	/**
+	 * isSetupCompleteCheck
+	 * 
+	 * Checks if all languages have the mandatory language code.
+	 */
+	public function isSetupCompleteCheck() {
+		$languages = $this->pages->find("template=".LanguageSupport::languageTemplateName);
+		foreach($languages as $lang) {
+			if(!$lang->get(self::languageCodeFieldname)) {
+				$this->error("Required language code is missing for language: " . $lang->title . ". <a href='".$lang->editUrl()."'>Setup now</a>", Notice::allowMarkup);
+			}
+		}
+	}
+	
+	
+	/**
+	 * Generate hreflang markup
+	 * 
+	 * Generates the hreflang markup vor all viewable pages
+	 * 
+	 * @param Page $currentPage
+	 * @return string
+	 */
+	public function generateMarkup(Page $currentPage) {
+		$html = "";
+		
+			foreach($currentPage->languages() as $lang) {
+
+				if($currentPage->viewable($lang)) {
+					$localUrl = $currentPage->localHttpUrl($lang);
+					$languageCode = strtolower($lang->get(self::languageCodeFieldname));
+					$countryCode = ($lang->get(self::countryCodeFieldname)) ? strtoupper($lang->get(self::languageCodeFieldname)) : "";
+					
+					$hreflang = (!empty($countryCode)) ? $languageCode."-".$countryCode : $languageCode;
+					
+					$html .= "<link rel=\"alternate\" hreflang=\"".$hreflang."\" href=\"".$localUrl."\" />\r\n";
+					
+					// take the default language also as landing page for all non-mentioned languages/countries
+					if($lang->isDefault()) {
+						$html .= "<link rel=\"alternate\" hreflang=\"x-default\" href=\"".$localUrl."\" />\r\n";
+					}
+				}
+			}
+		
+		return $html;
+		
+	}
+	
+	
+	/**
+	 * Installs the module
+	 * 
+	 * Add two module related fields to the language template from LanguageSupport.module
+	 * 
+	 * @throws WireException
+	 */
+	public function ___install() {
+
+		// get existing language template
+		$templateLanguageSupport = $this->templates(LanguageSupport::languageTemplateName);
+		if(!$templateLanguageSupport)
+			throw new WireException("The language template from module LanguageSupport is not available."); 
+		
+		if($this->fields->get(self::languageCodeFieldname)) 
+			throw new WireException("There is already a field installed called '".self::languageCodeFieldname."'"); 
+
+		if($this->fields->get(self::countryCodeFieldname)) 
+			throw new WireException("There is already a field installed called '".self::countryCodeFieldname."'"); 
+						
+		
+		$templateLanguageSupportFieldgroup = $templateLanguageSupport->fieldgroup;
+						
+		$fieldCodeLang = new Field();
+		$fieldCodeLang->type = $this->modules->get("FieldtypeText");
+		$fieldCodeLang->name = self::languageCodeFieldname;
+		$fieldCodeLang->label = 'Language Code';
+		$fieldCodeLang->required = true;
+		$fieldCodeLang->flags = Field::flagSystem | Field::flagPermanent; 
+		$fieldCodeLang->save();
+		$this->message("Created language code field: " . self::languageCodeFieldname); 
+
+		
+		$fieldCodeCountry = new Field();
+		$fieldCodeCountry->type = $this->modules->get("FieldtypeText");
+		$fieldCodeCountry->name = self::countryCodeFieldname;
+		$fieldCodeCountry->label = 'Country Code';
+		$fieldCodeCountry->required = false;
+		$fieldCodeCountry->flags = Field::flagSystem | Field::flagPermanent; 
+		$fieldCodeCountry->save();
+		$this->message("Created country code field: " . self::languageCodeFieldname); 
+		
+		
+		$templateLanguageSupportFieldgroup->add($fieldCodeLang);
+		$templateLanguageSupportFieldgroup->add($fieldCodeCountry);
+		$templateLanguageSupportFieldgroup->save();
+		
+		$templateLanguageSupport->save();
+		$this->message("New fields have been saved to the language template"); 
+		
+	}
+	
+	
+	/**
+	 * Uninstalls the module
+	 * 
+	 * Remove the module related fields from language template
+	 * 
+	 * @throws WireException
+	 */
+	public function ___uninstall() {
+
+		$templateLanguageSupport = $this->templates(LanguageSupport::languageTemplateName);
+		if(!$templateLanguageSupport)
+			throw new WireException("The language template from module LanguageSupport is not available."); 
+		$templateLanguageSupportFieldgroup = $templateLanguageSupport->fieldgroup;
+
+		// Handle language code field
+		$fieldCodeLang = $this->fields(LanguageHrefGenerator::languageCodeFieldname);
+		if($fieldCodeLang) {
+			$fieldCodeLang->flags = Field::flagSystemOverride; 
+			$fieldCodeLang->flags = 0; 
+			$this->fields->save($fieldCodeLang);
+			
+			$templateLanguageSupportFieldgroup->remove($fieldCodeLang);
+			$templateLanguageSupportFieldgroup->save();
+			$templateLanguageSupport->save();
+			
+			$this->fields->delete($fieldCodeLang);
+			$this->message("Field removed sucessfully: ". self::languageCodeFieldname); 
+		}
+		
+		
+		// handle country code field
+		$fieldCodeCountry = $this->fields(LanguageHrefGenerator::countryCodeFieldname);
+		if($fieldCodeCountry) {
+			$fieldCodeCountry->flags = Field::flagSystemOverride; 
+			$fieldCodeCountry->flags = 0; 
+			$this->fields->save($fieldCodeCountry);
+
+			$templateLanguageSupportFieldgroup->remove($fieldCodeCountry);
+			$templateLanguageSupportFieldgroup->save();
+			$templateLanguageSupport->save();
+			
+			$this->fields->delete($fieldCodeCountry);
+			$this->message("Field removed sucessfully: ". self::countryCodeFieldname); 
+
+		}
+
+		return;		
+	}
+	
+}
